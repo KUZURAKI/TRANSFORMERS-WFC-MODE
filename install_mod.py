@@ -262,8 +262,60 @@ def patch_transgame(path_in, path_out):
     assert m_ and m_.end() - m_.start() == 19, 'ClearCharacter statement not found - unsupported game version?'
     for k in range(m_.start(), m_.end()):
         d[q0 + k] = 0x0B
+    # (C) lobby start: append "?Character=<picked character>" to the level URL.
+    #     The level's TnGame.PostLogin -> SelectPieCharacter reads that option and selects the character
+    #     itself, which skips the in-level character-select screen.
+    fm = pk.find('TnGameReplicationInfoGameLobby.ModifyURL', 'Function')
+    m0, mn = script_of(pk, fm)
+    ms = bytes(d[m0:m0 + mn])
+    assert ms.endswith(b'\x04\x0b\x53'), 'ModifyURL layout changed'
+    ins = len(ms) - 3
+    assert (b'\x07' + struct.pack('<H', ins)) in ms, 'ModifyURL jump layout changed'
+    m_opt = re.search(rb'\x0f\x48(....)\x70\x70\x48\1\x1f\?Checkpoint=\x00\x16', ms, re.S)
+    assert m_opt, 'ModifyURL OptionsURL pattern not found'
+    opt = m_opt.group(1)
+    # references taken from TnGameReplicationInfoGameLobby.DeselectInvalidCharacters (same package)
+    dsel = pk.find('TnGameReplicationInfoGameLobby.DeselectInvalidCharacters', 'Function')
+    s0, sn = script_of(pk, dsel)
+    ss = bytes(d[s0:s0 + sn])
+    m_arr = re.search(rb'\x58(\x01....)\x00', ss, re.S)           # I:PRIArray
+    m_cast = re.search(rb'\x2e(....)\x00', ss, re.S)               # class TnPlayerReplicationInfo
+    m_call = re.search(rb'\x19\x00....\x0a\x00\x00\x1b(........)\x16\x07', ss, re.S)  # GetCharacterName
+    assert m_arr and m_cast and m_call, 'DeselectInvalidCharacters layout changed'
+    name_expr = (b'\x19\x2e' + m_cast.group(1) + b'\x10\x25' + m_arr.group(1)
+                 + b'\x0a\x00\x00\x1b' + m_call.group(1) + b'\x16')
+    stmt = (b'\x0f\x48' + opt + b'\x70\x70\x48' + opt + _sconst('?Character=') + b'\x16' + name_expr + b'\x16')
+    new_ms = ms[:ins] + stmt + ms[ins:]
+    blob_old = bytes(d[fm['off']:fm['off'] + fm['size']])
+    new_blob = blob_old[:40] + struct.pack('<i', len(new_ms)) + new_ms + blob_old[44 + mn:]
+    while len(d) % 4:
+        d.append(0)
+    new_off = len(d)
+    d += new_blob
+    struct.pack_into('<ii', d, fm['hdr'] + 32, len(new_blob), new_off)
+
+    # (D) TnGame.SelectPieCharacter: take the option as-is instead of searching the level's list
+    fp = pk.find('TnGame.SelectPieCharacter', 'Function')
+    p0_, pn = script_of(pk, fp)
+    ps = bytes(d[p0_:p0_ + pn])
+    # L:PossibleCharacters = (GetGRI()).GetPlayableIconicCharacterNames()   (30 bytes)
+    m_get = re.search(rb'\x0f\x00(....)\x19\x1b........\x16\x0a\x00\x00\x1b........\x16', ps, re.S)
+    assert m_get, 'SelectPieCharacter layout changed'
+    m_find = re.search(rb'\x46\x00' + re.escape(m_get.group(1)) + rb'\x05\x00\x00(....)', ps, re.S)
+    assert m_get and m_find and m_get.end() - m_get.start() == 30, 'SelectPieCharacter layout changed'
+    add = b'\x55\x00' + m_get.group(1) + b'\x05\x00\x00' + m_find.group(1)
+    patch = add + b'\x0b' * (30 - len(add))
+    d[p0_ + m_get.start():p0_ + m_get.end()] = patch
+
+    # (E) ValidateCharacterSelection always accepts (so the picked character is not rejected by the chapter list)
+    fv = pk.find('TnGameReplicationInfo.ValidateCharacterSelection', 'Function')
+    v0, vn = script_of(pk, fv)
+    vs = bytes(d[v0:v0 + vn])
+    assert vs[:3] == b'\x07\x0d\x00' and vs[11:13] == b'\x04\x27', 'Validate layout changed'
+    d[v0:v0 + 11] = b'\x0b' * 11
+
     open(path_out, 'wb').write(d)
-    print('  TransGame.xxx: in-level list extended, lobby character retention enabled')
+    print('  TransGame.xxx: list extended, lobby pick carried into the level, in-level select skipped')
     return bytes(d)
 
 

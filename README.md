@@ -7,7 +7,7 @@
 | Что | Как |
 |---|---|
 | Лобби кампании (A1–A5, D1–D5) | вместо 3 героев главы — все подходящие персонажи фракции |
-| Выбранный персонаж | сохраняется при загрузке уровня (в оригинале игра стирала выбор → второй экран на 3 героя) |
+| Выбранный персонаж | лобби дописывает его в адрес уровня (`?Character=`), уровень выбирает его сам — экран выбора из 3 героев в уровне пропускается |
 | Ваш герой не из «родных» трёх | играете **четвёртым**; три героя главы остаются ИИ-напарниками |
 | `LockedCharacter=true` | снято для всех |
 
@@ -45,7 +45,9 @@ python install_mod.py "D:\Games\TRANSFORMERS - War for Cybertron" --restore
 * `Coalesced.ini` обфусцирован XOR-ключом длиной 61 байт с непрерывной позицией по записям; скрипт распаковывает 14 вложенных ini, правит `TransLevels.ini` (`CampaignCharacters`) и `TransCustomization.ini` (`LockedCharacter`) и пакует обратно.
 * `TransGame.xxx`:
   * `TnWorldInfo.GetPlayableIconicCharacterNames` переписана (байткод UnrealScript) и дописана в конец пакета, запись в таблице экспортов перенаправлена на неё;
-  * в `TnGameLobbyGameCampaign.HandleSeamlessTravelPlayer` убран вызов `PRI.ClearCharacter()` (замена на `EX_Nothing`, размер не меняется).
+  * в `TnGameLobbyGameCampaign.HandleSeamlessTravelPlayer` убран вызов `PRI.ClearCharacter()` (замена на `EX_Nothing`, размер не меняется);
+  * `TnGameReplicationInfoGameLobby.ModifyURL` дополняет адрес уровня параметром `?Character=<выбранный персонаж>`; штатный `TnGame.SelectPieCharacter` в уровне читает его и выбирает персонажа без экрана выбора (функция слегка поправлена, чтобы не искать имя в списке главы);
+  * `TnGameReplicationInfo.ValidateCharacterSelection` всегда разрешает выбор.
 * Файлы игры в репозиторий **не входят** — только патчер.
 
 ## Статус
