@@ -2,16 +2,24 @@
 """
 TRANSFORMERS: War for Cybertron - "All Characters" campaign mod (patcher)
 
-What it does (applied to YOUR copy of the game, nothing from the game is redistributed):
-  1. Coalesced.ini
-       - every campaign chapter (A1-A5 / D1-D5) offers every campaign-capable character of its faction
-       - all "LockedCharacter=true" are set to false
-  2. TransGame.xxx
-       - the in-level character list = chapter's own 3 characters + the rest of the faction
-         (the 3 originals still become AI buddies, a different pick plays as an extra 4th character)
-       - the campaign lobby no longer wipes your character when the chapter loads, so the in-level
-         character-select screen is skipped and the character picked in the lobby is used.
-  3. PCTOC.txt  - size / md5 of the changed files
+Applied to YOUR copy of the game; nothing from the game is redistributed.
+
+  1. Coalesced.ini   - every campaign chapter (A1-A5 / D1-D5) offers every campaign-capable character
+                       of its faction in the lobby; all "LockedCharacter=true" are set to false.
+  2. Chapter maps    - (*_Base_m.xxx) each chapter's TnCoopInfo character list gets a definition for every
+                       other character of the faction (a copy of the chapter's own definition with another
+                       CharacterName), so the in-level character select accepts them.
+  3. DLC\\AllCharacters\\AllCharacters.ini
+                     - [Engine.PackagesToFullyLoadForDLC]: when a chapter map loads, the robot definition
+                       packages (TR_<Name>_ROBODEF_p) of the added characters are loaded too, so the player
+                       can actually spawn as them.
+  4. PCTOC.txt       - size / md5 of the changed files.
+
+Notes learned the hard way (see README):
+  * UnrealScript in this game is compiled into TWFC.exe - changing bytecode in packages has no effect;
+    only data (objects, lists, config) changes work.
+  * The DLC packages are not loaded when you use "continue campaign" from the main menu - start the
+    chapter through "Chapter select".
 
 Originals are backed up next to the files as "*.original" the first time the script runs.
 Usage:
@@ -23,6 +31,26 @@ import hashlib, os, re, shutil, struct, sys
 # ----------------------------------------------------------------------------- configuration
 AUTOBOTS = ['Optimus Prime', 'Optimus', 'Bumblebee', 'Ironhide', 'Ratchet', 'Sideswipe', 'Warpath', 'Jetfire', 'AirRaid']
 DECEPTICONS = ['Megatron', 'Starscream', 'Soundwave', 'Breakdown', 'Brawl', 'Barricade', 'Skywarp', 'Thundercracker']
+
+# chapter map -> faction list
+CHAPTERS = {
+    'A1_IAC_Base_m': AUTOBOTS, 'A2_KON_BASE_m': AUTOBOTS, 'A3_COR_Base_m': AUTOBOTS,
+    'A4_ORB_Base_m': AUTOBOTS, 'A5_TRY_BASE_m': AUTOBOTS,
+    'D1_ORB_Base_m': DECEPTICONS, 'D2_COR_Base_m': DECEPTICONS, 'D3A_IAC_Base_m': DECEPTICONS,
+    'D3B_IAC_Base_m': DECEPTICONS, 'D5_OME_BASE_m': DECEPTICONS,
+}
+
+# iconic name -> package with its robot definition
+ROBODEF_PKG = {
+    'Optimus Prime': 'TR_Optimus_ROBODEF_p', 'Optimus': 'TR_Optimus_ROBODEF_p', 'Bumblebee': 'TR_BumbleBee_ROBODEF_p',
+    'Ironhide': 'TR_Ironhide_ROBODEF_p', 'Ratchet': 'TR_Ratchet_ROBODEF_p', 'Sideswipe': 'TR_Sideswipe_ROBODEF_p',
+    'Warpath': 'TR_Warpath_ROBODEF_p', 'Jetfire': 'TR_Jetfire_ROBODEF_p', 'AirRaid': 'TR_AirRaid_ROBODEF_p',
+    'Megatron': 'TR_Megatron_ROBODEF_p', 'Starscream': 'TR_StarScream_ROBODEF_p', 'Soundwave': 'TR_Soundwave_ROBODEF_p',
+    'Breakdown': 'TR_Breakdown_ROBODEF_p', 'Brawl': 'TR_Brawl_ROBODEF_p', 'Barricade': 'TR_Barricade_ROBODEF_p',
+    'Skywarp': 'TR_Skywarp_ROBODEF_p', 'Thundercracker': 'TR_Thunder_ROBODEF_p',
+}
+
+DLC_NAME = 'AllCharacters'
 
 # ----------------------------------------------------------------------------- Coalesced.ini codec
 KEY = b'vvp;aseiurwefsdcfszdcvnas;dwepo2345098]qw]{}p2039458pseasdfzc'
@@ -74,7 +102,6 @@ def patch_coalesced(path_in, path_out):
                 return f
         raise KeyError(name)
 
-    # --- TransLevels.ini
     lv = find('TransLevels.ini')
     text = lv[1].decode('latin1')
     seps = re.findall(r'(?:\r?\n){2,}', text)
@@ -104,7 +131,6 @@ def patch_coalesced(path_in, path_out):
     for s, sec in zip(seps, secs[1:]):
         res += s + sec
     lv[1] = res.encode('latin1')
-    # --- TransCustomization.ini
     cu = find('TransCustomization.ini')
     t, n = re.subn(r'LockedCharacter=true', 'LockedCharacter=false', cu[1].decode('latin1'))
     cu[1] = t.encode('latin1')
@@ -116,12 +142,14 @@ def patch_coalesced(path_in, path_out):
 
 # ----------------------------------------------------------------------------- minimal UE3 package reader
 class Pkg:
+    """Enough of a UE3 (v511, HighMoon) package reader to find objects and their serialized data."""
+
     def __init__(s, data):
         s.d = d = data
-        assert d[:4] == b'\xc1\x83\x2a\x9e'
+        assert d[:4] == b'\xc1\x83\x2a\x9e', 'not an Unreal package'
         l, = struct.unpack_from('<i', d, 16)
-        o = 20 + l
-        (s.flags, s.nc, s.no, s.ec, s.eo, s.ic, s.io) = struct.unpack_from('<Iiiiiii', d, o)
+        s.so = 20 + l
+        (s.flags, s.nc, s.no, s.ec, s.eo, s.ic, s.io, s.dep) = struct.unpack_from('<Iiiiiiii', d, s.so)
         s.names, p = [], s.no
         for _ in range(s.nc):
             l, = struct.unpack_from('<i', d, p)
@@ -155,8 +183,9 @@ class Pkg:
                     if s._valid(q + k):
                         q += k
                         break
-            s.exports.append(dict(idx=i + 1, cls=cls, outer=outer, name=s.names[on], size=size, off=off, hdr=p))
+            s.exports.append(dict(idx=i + 1, cls=cls, outer=outer, name=s.names[on], num=onn, size=size, off=off, hdr=p))
             p = q
+        s.exp_end = p
 
     def _valid(s, p):
         d = s.d
@@ -184,144 +213,140 @@ class Pkg:
             return 'None'
         return s.imports[-r - 1]['name'] if r < 0 else s.exports[r - 1]['name']
 
-    def find(s, suffix, cls=None):
-        r = [e for e in s.exports if s.path(e['idx']).endswith(suffix) and (cls is None or s.cls_name(e) == cls)]
-        assert len(r) == 1, 'cannot uniquely locate %s (%d hits) - unsupported game version?' % (suffix, len(r))
-        return r[0]
+
+def _fstr(s):
+    b = s.encode('latin1') + b'\x00'
+    return struct.pack('<i', len(b)) + b
 
 
-def script_of(pk, e):
-    p = e['off'] + 40
-    n, = struct.unpack_from('<i', pk.d, p)
-    assert 0 < n < e['size'] and pk.d[p + 4 + n - 1] == 0x53, 'unexpected function layout'
-    return p + 4, n
-
-
-# ----------------------------------------------------------------------------- TransGame.xxx patches
-def _sconst(s):
-    return b'\x1f' + s.encode('latin1') + b'\x00'
-
-
-def _add_if_missing(name, base, pc):
-    val = _sconst(name)
-    find = b'\x46\x00' + pc + struct.pack('<H', len(val)) + val
-    cond = b'\x9a' + find + b'\x1d\xff\xff\xff\xff' + b'\x16'
-    add = b'\x55\x00' + pc + struct.pack('<H', len(val)) + val
-    size = 3 + len(cond) + len(add)
-    return b'\x07' + struct.pack('<H', base + size) + cond + add
-
-
-def _block(names, base, pc):
-    out = b''
-    for n in names:
-        out += _add_if_missing(n, base + len(out), pc)
+def _tags(pk, d, p, end):
+    """tagged properties of one block: list of (name, type, size_pos, value_pos, size)"""
+    out = []
+    while p < end:
+        ni, _ = struct.unpack_from('<ii', d, p)
+        p += 8
+        name = pk.names[ni]
+        if name == 'None':
+            return out
+        ti, _ = struct.unpack_from('<ii', d, p)
+        p += 8
+        typ = pk.names[ti]
+        size_pos = p
+        size, _ = struct.unpack_from('<ii', d, p)
+        p += 8
+        if typ in ('StructProperty', 'ByteProperty'):
+            p += 8
+        if typ == 'BoolProperty':          # this engine stores bools as 4 bytes
+            out.append((name, typ, size_pos, p, 4))
+            p += 4
+            continue
+        out.append((name, typ, size_pos, p, size))
+        p += size
     return out
 
 
-def patch_transgame(path_in, path_out):
+def _character_name(pk, e):
+    t = _tags(pk, pk.d, e['off'] + 4, e['off'] + e['size'])
+    s = [x for x in t if x[0] == 'AiCharacterDataResolved'][0]
+    c = [x for x in _tags(pk, pk.d, s[3], s[3] + s[4]) if x[0] == 'CharacterName'][0]
+    ln, = struct.unpack_from('<i', pk.d, c[3])
+    return pk.d[c[3] + 4:c[3] + 3 + ln].decode('latin1')
+
+
+def _clone_definition(pk, e, new_name):
+    """copy of an AI character definition (TnAiCharacterDefinition) with another CharacterName"""
+    blob = bytearray(pk.d[e['off']:e['off'] + e['size']])
+    s = [x for x in _tags(pk, blob, 4, len(blob)) if x[0] == 'AiCharacterDataResolved'][0]
+    _, _, ssize_pos, svpos, ssize = s
+    c = [x for x in _tags(pk, blob, svpos, svpos + ssize) if x[0] == 'CharacterName'][0]
+    _, _, csize_pos, cvpos, csize = c
+    val = _fstr(new_name)
+    out = bytearray(blob[:cvpos]) + val + blob[cvpos + csize:]
+    struct.pack_into('<i', out, csize_pos, len(val))
+    struct.pack_into('<i', out, ssize_pos, ssize + len(val) - csize)
+    struct.pack_into('<i', out, 0, -1)            # NetIndex: none
+    return bytes(out)
+
+
+def patch_chapter_map(path_in, path_out, faction):
+    """Adds a character definition for every faction character the chapter lacks and lists them all in
+    TnCoopInfo.PlayableCharacters. New objects, the export table and the depends table go to the end of the
+    file (the game follows the offsets in the header), nothing else moves."""
     pk = Pkg(open(path_in, 'rb').read())
     d = bytearray(pk.d)
+    so, ec, eo, ic, dep = pk.so, pk.ec, pk.eo, pk.ic, pk.dep
+    assert pk.exp_end == dep, 'export table end != depends offset (unsupported layout)'
 
-    # (A) in-level list = chapter's characters + every other character of the faction
-    fn = pk.find('TnWorldInfo.GetPlayableIconicCharacterNames', 'Function')
-    fac = pk.find('TnCoopInfo.Faction')
-    dec = [e for e in pk.exports if e['name'] == 'TnFactionTeamDecepticons' and pk.cls_name(e) in ('None', 'Class')]
-    assert len(dec) == 1
-    p0, n = script_of(pk, fn)
-    orig = bytes(d[p0:p0 + n])
-    assert n == 75 and orig[0] == 0x0F
-    PC, COOP, RV = orig[2:6], orig[8:12], orig[-5:-1]
-    head = orig[:25]
-    cond = b'\x72' + b'\x19\x01' + COOP + struct.pack('<H', 5) + b'\x04\x01' + struct.pack('<i', fac['idx']) \
-        + b'\x20' + struct.pack('<i', dec[0]['idx']) + b'\x16'
-    dec_base = len(head) + 3 + len(cond)
-    dec_block = _block(DECEPTICONS, dec_base, PC)
-    a_base = dec_base + len(dec_block) + 3
-    a_block = _block(AUTOBOTS, a_base, PC)
-    end_pos = a_base + len(a_block)
-    script = (head + b'\x07' + struct.pack('<H', a_base) + cond + dec_block
-              + b'\x06' + struct.pack('<H', end_pos) + a_block
-              + b'\x04\x00' + PC + b'\x04\x3a' + RV + b'\x53')
-    blob_old = bytes(d[fn['off']:fn['off'] + fn['size']])
-    new_blob = blob_old[:40] + struct.pack('<i', len(script)) + script + blob_old[44 + n:]
+    coop = [e for e in pk.exports if pk.cls_name(e) == 'TnCoopInfo'
+            and pk.path(e['idx']).endswith('PersistentLevel.TnWorldInfo.TnCoopInfo')]
+    assert len(coop) == 1, 'TnCoopInfo not found'
+    coop = coop[0]
+    cblob = bytes(d[coop['off']:coop['off'] + coop['size']])
+    pc = [x for x in _tags(pk, cblob, 4, len(cblob)) if x[0] == 'PlayableCharacters'][0]
+    _, _, psize_pos, pvpos, psize = pc
+    cnt, = struct.unpack_from('<i', cblob, pvpos)
+    refs = list(struct.unpack_from('<%di' % cnt, cblob, pvpos + 4))
+    defs = [pk.exports[r - 1] for r in refs]
+    own = [_character_name(pk, e) for e in defs]
+    extras = [n for n in faction if n not in own]
+    template = defs[0]
+
+    # new definition objects
+    new_entries, new_refs = b'', []
+    entry = bytes(d[template['hdr']:template['hdr'] + 44])
+    for k, nme in enumerate(extras):
+        blob = _clone_definition(pk, template, nme)
+        while len(d) % 4:
+            d.append(0)
+        off = len(d)
+        d += blob
+        ent = bytearray(entry)
+        struct.pack_into('<i', ent, 16, 900 + k)       # same object name, unique number
+        struct.pack_into('<ii', ent, 32, len(blob), off)
+        struct.pack_into('<I', ent, 40, 0)
+        new_entries += bytes(ent) + b'\x00'
+        new_refs.append(ec + 1 + k)
+
+    # export + depends tables -> end of file
+    p = dep
+    for _ in range(ec):
+        c, = struct.unpack_from('<i', d, p)
+        p += 4 + 4 * c
+    exp_tab, dep_tab = bytes(d[eo:dep]), bytes(d[dep:p])
     while len(d) % 4:
         d.append(0)
-    new_off = len(d)
-    d += new_blob
-    struct.pack_into('<ii', d, fn['hdr'] + 32, len(new_blob), new_off)
+    new_eo = len(d)
+    d += exp_tab + new_entries
+    new_dep = len(d)
+    d += dep_tab + b'\x00\x00\x00\x00' * len(extras)
+    new_ec = ec + len(extras)
+    struct.pack_into('<ii', d, so + 12, new_ec, new_eo)
+    struct.pack_into('<i', d, so + 28, new_dep)
+    gp = so + 32 + 16
+    gc, = struct.unpack_from('<i', d, gp)
+    for g in range(gc):
+        ge, = struct.unpack_from('<i', d, gp + 4 + 12 * g)
+        if ge == ec:
+            struct.pack_into('<i', d, gp + 4 + 12 * g, new_ec)
 
-    # (B) campaign lobby must not wipe the picked character on level load
-    fb = pk.find('TnGameLobbyGameCampaign.HandleSeamlessTravelPlayer', 'Function')
-    q0, m = script_of(pk, fb)
-    s = bytes(d[q0:q0 + m])
-    # expected statement: 19 00 <PRI local ref> 0a 00 00 1b <ClearCharacter name 8 bytes> 16   (19 bytes) ending at "04 3a ..."? -> locate by shape
-    i = s.find(b'\x19\x00')
-    j = i
-    # the ClearCharacter call is the last statement before the final return/end: pattern 19 00 ref(4) 0a 00 00 1b name(8) 16
-    m_ = re.search(rb'\x19\x00....\x0a\x00\x00\x1b........\x16', s, re.S)
-    assert m_ and m_.end() - m_.start() == 19, 'ClearCharacter statement not found - unsupported game version?'
-    for k in range(m_.start(), m_.end()):
-        d[q0 + k] = 0x0B
-    # (C) lobby start: append "?Character=<picked character>" to the level URL.
-    #     The level's TnGame.PostLogin -> SelectPieCharacter reads that option and selects the character
-    #     itself, which skips the in-level character-select screen.
-    fm = pk.find('TnGameReplicationInfoGameLobby.ModifyURL', 'Function')
-    m0, mn = script_of(pk, fm)
-    ms = bytes(d[m0:m0 + mn])
-    assert ms.endswith(b'\x04\x0b\x53'), 'ModifyURL layout changed'
-    ins = len(ms) - 3
-    assert (b'\x07' + struct.pack('<H', ins)) in ms, 'ModifyURL jump layout changed'
-    m_opt = re.search(rb'\x0f\x48(....)\x70\x70\x48\1\x1f\?Checkpoint=\x00\x16', ms, re.S)
-    assert m_opt, 'ModifyURL OptionsURL pattern not found'
-    opt = m_opt.group(1)
-    # references taken from TnGameReplicationInfoGameLobby.DeselectInvalidCharacters (same package)
-    dsel = pk.find('TnGameReplicationInfoGameLobby.DeselectInvalidCharacters', 'Function')
-    s0, sn = script_of(pk, dsel)
-    ss = bytes(d[s0:s0 + sn])
-    m_arr = re.search(rb'\x58(\x01....)\x00', ss, re.S)           # I:PRIArray
-    m_cast = re.search(rb'\x2e(....)\x00', ss, re.S)               # class TnPlayerReplicationInfo
-    m_call = re.search(rb'\x19\x00....\x0a\x00\x00\x1b(........)\x16\x07', ss, re.S)  # GetCharacterName
-    assert m_arr and m_cast and m_call, 'DeselectInvalidCharacters layout changed'
-    name_expr = (b'\x19\x2e' + m_cast.group(1) + b'\x10\x25' + m_arr.group(1)
-                 + b'\x0a\x00\x00\x1b' + m_call.group(1) + b'\x16')
-    stmt = (b'\x0f\x48' + opt + b'\x70\x70\x48' + opt + _sconst('?Character=') + b'\x16' + name_expr + b'\x16')
-    new_ms = ms[:ins] + stmt + ms[ins:]
-    blob_old = bytes(d[fm['off']:fm['off'] + fm['size']])
-    new_blob = blob_old[:40] + struct.pack('<i', len(new_ms)) + new_ms + blob_old[44 + mn:]
+    # TnCoopInfo with the full list
+    allr = refs + new_refs
+    arr = struct.pack('<i', len(allr)) + struct.pack('<%di' % len(allr), *allr)
+    newc = bytearray(cblob[:pvpos]) + arr + cblob[pvpos + psize:]
+    struct.pack_into('<i', newc, psize_pos, len(arr))
     while len(d) % 4:
         d.append(0)
-    new_off = len(d)
-    d += new_blob
-    struct.pack_into('<ii', d, fm['hdr'] + 32, len(new_blob), new_off)
-
-    # (D) TnGame.SelectPieCharacter: take the option as-is instead of searching the level's list
-    fp = pk.find('TnGame.SelectPieCharacter', 'Function')
-    p0_, pn = script_of(pk, fp)
-    ps = bytes(d[p0_:p0_ + pn])
-    # L:PossibleCharacters = (GetGRI()).GetPlayableIconicCharacterNames()   (30 bytes)
-    m_get = re.search(rb'\x0f\x00(....)\x19\x1b........\x16\x0a\x00\x00\x1b........\x16', ps, re.S)
-    assert m_get, 'SelectPieCharacter layout changed'
-    m_find = re.search(rb'\x46\x00' + re.escape(m_get.group(1)) + rb'\x05\x00\x00(....)', ps, re.S)
-    assert m_get and m_find and m_get.end() - m_get.start() == 30, 'SelectPieCharacter layout changed'
-    add = b'\x55\x00' + m_get.group(1) + b'\x05\x00\x00' + m_find.group(1)
-    patch = add + b'\x0b' * (30 - len(add))
-    d[p0_ + m_get.start():p0_ + m_get.end()] = patch
-
-    # (E) ValidateCharacterSelection always accepts (so the picked character is not rejected by the chapter list)
-    fv = pk.find('TnGameReplicationInfo.ValidateCharacterSelection', 'Function')
-    v0, vn = script_of(pk, fv)
-    vs = bytes(d[v0:v0 + vn])
-    assert vs[:3] == b'\x07\x0d\x00' and vs[11:13] == b'\x04\x27', 'Validate layout changed'
-    d[v0:v0 + 11] = b'\x0b' * 11
+    off = len(d)
+    d += newc
+    struct.pack_into('<ii', d, new_eo + (coop['hdr'] - eo) + 32, len(newc), off)
 
     open(path_out, 'wb').write(d)
-    print('  TransGame.xxx: list extended, lobby pick carried into the level, in-level select skipped')
-    return bytes(d)
+    return bytes(d), own, extras
 
 
 # ----------------------------------------------------------------------------- PCTOC
 def update_toc(toc_path, entries):
-    """entries: {b'CookedPC\\TransGame.xxx': bytes, ...}"""
+    """entries: {b'CookedPC\\X.xxx': bytes}"""
     lines = open(toc_path, 'rb').read().split(b'\r\n')
     out = []
     for l in lines:
@@ -335,6 +360,27 @@ def update_toc(toc_path, entries):
     open(toc_path, 'wb').write(b'\r\n'.join(out))
 
 
+def write_dlc(game, extras_by_map):
+    """One ini per chapter map: the engine takes a single MapName per file
+    (several MapName blocks in one file broke the loading - tested)."""
+    base = os.path.join(game, 'DLC', DLC_NAME)
+    if os.path.isdir(base):
+        shutil.rmtree(base)
+    os.makedirs(os.path.join(base, 'Config'))
+    for m, extras in extras_by_map.items():
+        pkgs = []
+        for n in extras:
+            p = ROBODEF_PKG.get(n)
+            if p and p not in pkgs:
+                pkgs.append(p)
+        if not pkgs:
+            continue
+        text = '[Engine.PackagesToFullyLoadForDLC]\nMapName=%s\n' % m + ''.join('Package=%s\n' % p for p in pkgs)
+        for p in (os.path.join(base, m + '.ini'), os.path.join(base, 'Config', m + '.ini')):
+            open(p, 'w', newline='\n').write(text)
+    print('  DLC\\%s: one ini per chapter written' % DLC_NAME)
+
+
 # ----------------------------------------------------------------------------- main
 def main():
     args = [a for a in sys.argv[1:] if not a.startswith('--')]
@@ -344,31 +390,50 @@ def main():
         sys.exit(1)
     game = args[0]
     tg = os.path.join(game, 'TransGame')
-    files = {
-        'coal': os.path.join(tg, 'Config', 'PC', 'Cooked', 'Coalesced.ini'),
-        'game': os.path.join(tg, 'CookedPC', 'TransGame.xxx'),
-        'toc': os.path.join(tg, 'PCTOC.txt'),
-    }
-    for k, p in files.items():
+    cooked = os.path.join(tg, 'CookedPC')
+    coal = os.path.join(tg, 'Config', 'PC', 'Cooked', 'Coalesced.ini')
+    toc = os.path.join(tg, 'PCTOC.txt')
+    tgame = os.path.join(cooked, 'TransGame.xxx')
+    maps = {m: os.path.join(cooked, m + '.xxx') for m in CHAPTERS}
+    for p in [coal, toc] + list(maps.values()):
         if not os.path.exists(p):
             sys.exit('not found: ' + p + '\n(pass the game folder that contains Binaries and TransGame)')
+
+    all_files = [coal, toc, tgame] + list(maps.values())
     if restore:
-        for p in files.values():
+        for p in all_files:
             if os.path.exists(p + '.original'):
                 shutil.copy2(p + '.original', p)
                 print('restored', p)
+        dlc = os.path.join(game, 'DLC', DLC_NAME)
+        if os.path.isdir(dlc):
+            shutil.rmtree(dlc)
+            print('removed', dlc)
         return
-    for p in files.values():
+
+    for p in [coal, toc] + list(maps.values()):
         if not os.path.exists(p + '.original'):
             shutil.copy2(p, p + '.original')
             print('backup:', p + '.original')
+    # older versions of this mod patched TransGame.xxx - put the original back
+    if os.path.exists(tgame + '.original'):
+        shutil.copy2(tgame + '.original', tgame)
+
     print('patching...')
-    coal = patch_coalesced(files['coal'] + '.original', files['coal'])
-    gam = patch_transgame(files['game'] + '.original', files['game'])
-    # start from the pristine TOC so repeated runs stay clean
-    shutil.copy2(files['toc'] + '.original', files['toc'])
-    update_toc(files['toc'], {b'Config\\PC\\Cooked\\Coalesced.ini': coal, b'CookedPC\\TransGame.xxx': gam})
-    print('done. To undo: python install_mod.py "<game dir>" --restore')
+    toc_entries = {b'Config\\PC\\Cooked\\Coalesced.ini': patch_coalesced(coal + '.original', coal)}
+    if os.path.exists(tgame + '.original'):
+        toc_entries[b'CookedPC\\TransGame.xxx'] = open(tgame, 'rb').read()
+    extras_by_map = {}
+    for m, path in maps.items():
+        data, own, extras = patch_chapter_map(path + '.original', path, CHAPTERS[m])
+        extras_by_map[m] = extras
+        toc_entries[('CookedPC\\' + m + '.xxx').encode()] = data
+        print('  %s: chapter %s + added %s' % (m, own, extras))
+    write_dlc(game, extras_by_map)
+    shutil.copy2(toc + '.original', toc)
+    update_toc(toc, toc_entries)
+    print('done. Start chapters through "Chapter select" (not "continue").')
+    print('To undo: python install_mod.py "<game dir>" --restore')
 
 
 if __name__ == '__main__':
