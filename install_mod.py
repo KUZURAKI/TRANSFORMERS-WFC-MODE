@@ -362,6 +362,19 @@ def write_dlc(game, extras_by_map):
     print('  DLC\\%s: one ini per chapter written' % DLC_NAME)
 
 
+def set_large_address_aware(exe):
+    d = bytearray(open(exe, 'rb').read())
+    pe, = struct.unpack_from('<I', d, 0x3c)
+    assert d[pe:pe + 4] == b'PE\x00\x00'
+    ch, = struct.unpack_from('<H', d, pe + 22)
+    if ch & 0x20:
+        print('  TWFC.exe: already large-address-aware')
+        return
+    struct.pack_into('<H', d, pe + 22, ch | 0x20)
+    open(exe, 'wb').write(d)
+    print('  TWFC.exe: large-address-aware (4 GB) enabled')
+
+
 def main():
     args = [a for a in sys.argv[1:] if not a.startswith('--')]
     restore = '--restore' in sys.argv
@@ -375,11 +388,12 @@ def main():
     toc = os.path.join(tg, 'PCTOC.txt')
     tgame = os.path.join(cooked, 'TransGame.xxx')
     maps = {m: os.path.join(cooked, m + '.xxx') for m in CHAPTERS}
-    for p in [coal, toc] + list(maps.values()):
+    exe = os.path.join(game, 'Binaries', 'TWFC.exe')
+    for p in [coal, toc, exe] + list(maps.values()):
         if not os.path.exists(p):
             sys.exit('not found: ' + p + '\n(pass the game folder that contains Binaries and TransGame)')
 
-    all_files = [coal, toc, tgame] + list(maps.values())
+    all_files = [coal, toc, tgame, exe] + list(maps.values())
     if restore:
         for p in all_files:
             if os.path.exists(p + '.original'):
@@ -391,7 +405,7 @@ def main():
             print('removed', dlc)
         return
 
-    for p in [coal, toc] + list(maps.values()):
+    for p in [coal, toc, exe] + list(maps.values()):
         if not os.path.exists(p + '.original'):
             shutil.copy2(p, p + '.original')
             print('backup:', p + '.original')
@@ -409,6 +423,7 @@ def main():
         toc_entries[('CookedPC\\' + m + '.xxx').encode()] = data
         print('  %s: chapter %s + added %s' % (m, own, extras))
     write_dlc(game, extras_by_map)
+    set_large_address_aware(exe)
     shutil.copy2(toc + '.original', toc)
     update_toc(toc, toc_entries)
     print('done. Start chapters through "Chapter select" (not "continue").')
