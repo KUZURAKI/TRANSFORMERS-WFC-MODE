@@ -30,6 +30,22 @@ python install_mod.py "D:\Games\TRANSFORMERS - War for Cybertron"
 
 **Важно:** запускайте главы через **«Кампания → Выбор главы»**. При «Продолжить кампанию» из главного меню игра не подгружает DLC-пакеты, и персонаж не из главы не появится.
 
+## Вместе с TWFC Advanced Configurator (FPS, поле зрения, графика)
+
+Мод [TWFC - Advanced Configurator](https://www.nexusmods.com/transformerswarforcybertron/mods/47) добавляет меню по **F1**:
+- FPS 30–240 без ускорения игры;
+- поле зрения 50–140;
+- тени, текстуры, размытие, HUD и другое.
+
+Он совместим с этим модом. Configurator — это `Binaries\dinput8.dll` + `TWFCAdvancedConfigurator.ini`, он не трогает `Coalesced.ini` и карты. `install_mod.py` (в том числе `--restore`) его файлы не трогает.
+
+Установка (порядок не важен):
+1. Скачайте архив с Nexus (нужен аккаунт) и распакуйте папку `Binaries` из него в папку игры — рядом с `TransGame`, чтобы `dinput8.dll` оказался рядом с `TWFC.exe`.
+2. Запустите `install_mod.py`, как описано выше.
+3. В игре нажмите **F1**: FPS, поле зрения и прочее настраиваются там. Настройки сохраняются в `TWFCAdvancedConfigurator.ini`.
+
+Файлы Configurator'а в этот репозиторий не входят — это чужой мод, качайте его со страницы автора.
+
 ## Удаление
 
 ```bash
