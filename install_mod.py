@@ -28,11 +28,9 @@ Usage:
 """
 import hashlib, os, re, shutil, struct, sys
 
-# ----------------------------------------------------------------------------- configuration
 AUTOBOTS = ['Optimus Prime', 'Optimus', 'Bumblebee', 'Ironhide', 'Ratchet', 'Sideswipe', 'Warpath', 'Jetfire', 'AirRaid']
 DECEPTICONS = ['Megatron', 'Starscream', 'Soundwave', 'Breakdown', 'Brawl', 'Barricade', 'Skywarp', 'Thundercracker']
 
-# chapter map -> faction list
 CHAPTERS = {
     'A1_IAC_Base_m': AUTOBOTS, 'A2_KON_BASE_m': AUTOBOTS, 'A3_COR_Base_m': AUTOBOTS,
     'A4_ORB_Base_m': AUTOBOTS, 'A5_TRY_BASE_m': AUTOBOTS,
@@ -40,7 +38,6 @@ CHAPTERS = {
     'D3B_IAC_Base_m': DECEPTICONS, 'D5_OME_BASE_m': DECEPTICONS,
 }
 
-# iconic name -> package with its robot definition
 ROBODEF_PKG = {
     'Optimus Prime': 'TR_Optimus_ROBODEF_p', 'Optimus': 'TR_Optimus_ROBODEF_p', 'Bumblebee': 'TR_BumbleBee_ROBODEF_p',
     'Ironhide': 'TR_Ironhide_ROBODEF_p', 'Ratchet': 'TR_Ratchet_ROBODEF_p', 'Sideswipe': 'TR_Sideswipe_ROBODEF_p',
@@ -52,7 +49,6 @@ ROBODEF_PKG = {
 
 DLC_NAME = 'AllCharacters'
 
-# ----------------------------------------------------------------------------- Coalesced.ini codec
 KEY = b'vvp;aseiurwefsdcfszdcvnas;dwepo2345098]qw]{}p2039458pseasdfzc'
 K = len(KEY)
 
@@ -140,10 +136,7 @@ def patch_coalesced(path_in, path_out):
     return out
 
 
-# ----------------------------------------------------------------------------- minimal UE3 package reader
 class Pkg:
-    """Enough of a UE3 (v511, HighMoon) package reader to find objects and their serialized data."""
-
     def __init__(s, data):
         s.d = d = data
         assert d[:4] == b'\xc1\x83\x2a\x9e', 'not an Unreal package'
@@ -220,7 +213,6 @@ def _fstr(s):
 
 
 def _tags(pk, d, p, end):
-    """tagged properties of one block: list of (name, type, size_pos, value_pos, size)"""
     out = []
     while p < end:
         ni, _ = struct.unpack_from('<ii', d, p)
@@ -236,7 +228,7 @@ def _tags(pk, d, p, end):
         p += 8
         if typ in ('StructProperty', 'ByteProperty'):
             p += 8
-        if typ == 'BoolProperty':          # this engine stores bools as 4 bytes
+        if typ == 'BoolProperty':
             out.append((name, typ, size_pos, p, 4))
             p += 4
             continue
@@ -254,7 +246,6 @@ def _character_name(pk, e):
 
 
 def _clone_definition(pk, e, new_name):
-    """copy of an AI character definition (TnAiCharacterDefinition) with another CharacterName"""
     blob = bytearray(pk.d[e['off']:e['off'] + e['size']])
     s = [x for x in _tags(pk, blob, 4, len(blob)) if x[0] == 'AiCharacterDataResolved'][0]
     _, _, ssize_pos, svpos, ssize = s
@@ -264,14 +255,11 @@ def _clone_definition(pk, e, new_name):
     out = bytearray(blob[:cvpos]) + val + blob[cvpos + csize:]
     struct.pack_into('<i', out, csize_pos, len(val))
     struct.pack_into('<i', out, ssize_pos, ssize + len(val) - csize)
-    struct.pack_into('<i', out, 0, -1)            # NetIndex: none
+    struct.pack_into('<i', out, 0, -1)
     return bytes(out)
 
 
 def patch_chapter_map(path_in, path_out, faction):
-    """Adds a character definition for every faction character the chapter lacks and lists them all in
-    TnCoopInfo.PlayableCharacters. New objects, the export table and the depends table go to the end of the
-    file (the game follows the offsets in the header), nothing else moves."""
     pk = Pkg(open(path_in, 'rb').read())
     d = bytearray(pk.d)
     so, ec, eo, ic, dep = pk.so, pk.ec, pk.eo, pk.ic, pk.dep
@@ -291,7 +279,6 @@ def patch_chapter_map(path_in, path_out, faction):
     extras = [n for n in faction if n not in own]
     template = defs[0]
 
-    # new definition objects
     new_entries, new_refs = b'', []
     entry = bytes(d[template['hdr']:template['hdr'] + 44])
     for k, nme in enumerate(extras):
@@ -301,13 +288,12 @@ def patch_chapter_map(path_in, path_out, faction):
         off = len(d)
         d += blob
         ent = bytearray(entry)
-        struct.pack_into('<i', ent, 16, 900 + k)       # same object name, unique number
+        struct.pack_into('<i', ent, 16, 900 + k)
         struct.pack_into('<ii', ent, 32, len(blob), off)
         struct.pack_into('<I', ent, 40, 0)
         new_entries += bytes(ent) + b'\x00'
         new_refs.append(ec + 1 + k)
 
-    # export + depends tables -> end of file
     p = dep
     for _ in range(ec):
         c, = struct.unpack_from('<i', d, p)
@@ -329,7 +315,6 @@ def patch_chapter_map(path_in, path_out, faction):
         if ge == ec:
             struct.pack_into('<i', d, gp + 4 + 12 * g, new_ec)
 
-    # TnCoopInfo with the full list
     allr = refs + new_refs
     arr = struct.pack('<i', len(allr)) + struct.pack('<%di' % len(allr), *allr)
     newc = bytearray(cblob[:pvpos]) + arr + cblob[pvpos + psize:]
@@ -344,9 +329,7 @@ def patch_chapter_map(path_in, path_out, faction):
     return bytes(d), own, extras
 
 
-# ----------------------------------------------------------------------------- PCTOC
 def update_toc(toc_path, entries):
-    """entries: {b'CookedPC\\X.xxx': bytes}"""
     lines = open(toc_path, 'rb').read().split(b'\r\n')
     out = []
     for l in lines:
@@ -361,8 +344,6 @@ def update_toc(toc_path, entries):
 
 
 def write_dlc(game, extras_by_map):
-    """One ini per chapter map: the engine takes a single MapName per file
-    (several MapName blocks in one file broke the loading - tested)."""
     base = os.path.join(game, 'DLC', DLC_NAME)
     if os.path.isdir(base):
         shutil.rmtree(base)
@@ -381,7 +362,6 @@ def write_dlc(game, extras_by_map):
     print('  DLC\\%s: one ini per chapter written' % DLC_NAME)
 
 
-# ----------------------------------------------------------------------------- main
 def main():
     args = [a for a in sys.argv[1:] if not a.startswith('--')]
     restore = '--restore' in sys.argv
@@ -415,7 +395,6 @@ def main():
         if not os.path.exists(p + '.original'):
             shutil.copy2(p, p + '.original')
             print('backup:', p + '.original')
-    # older versions of this mod patched TransGame.xxx - put the original back
     if os.path.exists(tgame + '.original'):
         shutil.copy2(tgame + '.original', tgame)
 
