@@ -1,22 +1,32 @@
 # TRANSFORMERS: War for Cybertron — All Characters (campaign mod)
 
-Играйте любую главу кампании за **любого** персонажа своей фракции.
+Играйте главы кампании за персонажей своей фракции, которых изначально в главе нет.
 
-## Статус
+## Персонажи по главам
 
-Рабочая версия, проверена в игре: глава 1 десептиконов, игрок — Starscream.
+В главу добавляются только те персонажи фракции, которых **нет в сюжете этой главы**. Если персонаж сам появляется в главе (катсцены, голограммы, реплики), его модель и лицевая анимация уже вшиты в файлы главы. Вторая копия для игрока с ними конфликтует, и игра вылетает. Установщик сам сканирует файлы каждой главы и отбирает безопасных персонажей. Список в лобби совпадает со списком в уровне.
 
-- **Работает:**
-  - в лобби кампании доступны все персонажи фракции;
-  - выбранный персонаж появляется в уровне и полностью рабочий (своя модель, оружие, трансформация).
-- **Известное (в работе):** все персонажи фракции, которых не выбрал игрок, появляются как ИИ-напарники. Добавленные напарники пока используют модель «родного» героя главы. Цель — оставить напарниками только 3 «родных» героев главы.
+| Глава | Родные | Добавлены |
+|---|---|---|
+| A1 | Optimus, Bumblebee, Ratchet | Sideswipe, AirRaid |
+| A2 | Optimus, Sideswipe, Bumblebee | Ironhide, Warpath, Jetfire |
+| A3 | Optimus Prime, Ironhide, Warpath | Bumblebee, Sideswipe, Jetfire, AirRaid |
+| A4 | AirRaid, Jetfire, SilverBolt | Bumblebee, Ironhide, Sideswipe, Warpath |
+| A5 | Bumblebee, Optimus Prime, Ironhide | Sideswipe, Warpath |
+| D1 | Brawl, Barricade, Megatron | Breakdown |
+| D2 | Starscream, Skywarp, Thundercracker | Megatron, Soundwave, Breakdown, Brawl, Barricade |
+| D3A | Megatron, Soundwave, Breakdown | Barricade, Skywarp, Thundercracker |
+| D3B | Megatron, Soundwave, Breakdown | Brawl, Barricade |
+| D5 | Megatron, Soundwave, Breakdown | Brawl, Barricade, Skywarp, Thundercracker |
 
-## Персонажи
+Jazz, Arcee, Scattershot, Zeta Prime, Shockwave, Slipstream, Deadend, Demolishor, Onslaught не включены. В обычной копии игры их пакеты `TR_<имя>_ROBODEF_p` — пустые заглушки, данные есть только в мультиплеерных и DLC-файлах.
 
-- **Автоботы:** Optimus Prime, Optimus, Bumblebee, Ironhide, Ratchet, Sideswipe, Warpath, Jetfire, AirRaid (+ родной SilverBolt в A4)
-- **Десептиконы:** Megatron, Starscream, Soundwave, Breakdown, Brawl, Barricade, Skywarp, Thundercracker
+**Известное:** все персонажи из списка главы, кроме выбранного, становятся ИИ-напарниками. Добавленные напарники используют модель «родного» героя главы. Набор отряда решает код внутри `TWFC.exe`, данными его не изменить.
 
-Jazz, Arcee, Scattershot, Zeta Prime, Shockwave, Slipstream, Deadend, Demolishor, Onslaught не включены. В обычной копии игры их пакеты `TR_<имя>_ROBODEF_p` — пустые заглушки (данные есть только в мультиплеерных/DLC-файлах).
+## Также
+
+- **Поле зрения:** 100 вместо 75.
+- **Large Address Aware для `TWFC.exe`:** тот же «4GB Patch», игре доступно 4 ГБ вместо 2.
 
 ## Установка
 
@@ -28,23 +38,7 @@ python install_mod.py "D:\Games\TRANSFORMERS - War for Cybertron"
 
 Путь — папка игры, в которой лежат `Binaries` и `TransGame`.
 
-**Важно:** запускайте главы через **«Кампания → Выбор главы»**. При «Продолжить кампанию» из главного меню игра не подгружает DLC-пакеты, и персонаж не из главы не появится.
-
-## Вместе с TWFC Advanced Configurator (FPS, поле зрения, графика)
-
-Мод [TWFC - Advanced Configurator](https://www.nexusmods.com/transformerswarforcybertron/mods/47) добавляет меню по **F1**:
-- FPS 30–240 без ускорения игры;
-- поле зрения 50–140;
-- тени, текстуры, размытие, HUD и другое.
-
-Он совместим с этим модом. Configurator — это `Binaries\dinput8.dll` + `TWFCAdvancedConfigurator.ini`, он не трогает `Coalesced.ini` и карты. `install_mod.py` (в том числе `--restore`) его файлы не трогает.
-
-Установка (порядок не важен):
-1. Скачайте архив с Nexus (нужен аккаунт) и распакуйте папку `Binaries` из него в папку игры — рядом с `TransGame`, чтобы `dinput8.dll` оказался рядом с `TWFC.exe`.
-2. Запустите `install_mod.py`, как описано выше.
-3. В игре нажмите **F1**: FPS, поле зрения и прочее настраиваются там. Настройки сохраняются в `TWFCAdvancedConfigurator.ini`.
-
-Файлы Configurator'а в этот репозиторий не входят — это чужой мод, качайте его со страницы автора.
+**Важно:** запускайте главы через **«Кампания → Выбор главы»**. При «Продолжить кампанию» из главного меню игра не подгружает DLC-пакеты, и добавленный персонаж не появится.
 
 ## Удаление
 
@@ -54,15 +48,19 @@ python install_mod.py "D:\Games\TRANSFORMERS - War for Cybertron" --restore
 
 ## Как это устроено
 
-1. **`Coalesced.ini`.** Обфусцирован XOR-ключом длиной 61 байт. Скрипт правит `TransLevels.ini` (`CampaignCharacters` — список в лобби) и `TransCustomization.ini` (`LockedCharacter=false`).
-2. **Карты глав (`*_Base_m.xxx`).** Экран выбора в уровне берёт персонажей из объекта `TnCoopInfo.PlayableCharacters` — это ссылки на определения `TnAiCharacterDefinition`, по 3 на главу. Скрипт делает копии определения с другим `CharacterName` для остальных персонажей фракции и добавляет их в список. Новые объекты, таблица экспортов и таблица зависимостей дописываются в конец файла, указатели в заголовке перенаправляются, остальное не сдвигается.
-3. **`DLC\AllCharacters\<карта>.ini`.** Раздел `[Engine.PackagesToFullyLoadForDLC]` (`MapName=` + `Package=`): при загрузке главы подгружаются пакеты `TR_<имя>_ROBODEF_p` добавленных персонажей. Так же подгружают персонажей моды на Nexus. На каждую карту нужен отдельный файл: несколько `MapName` в одном файле не работают.
+1. **`Coalesced.ini`.** Обфусцирован XOR-ключом длиной 61 байт. Скрипт правит:
+   - `TransLevels.ini` — `CampaignCharacters`, список в лобби;
+   - `TransCustomization.ini` — `LockedCharacter=false`;
+   - `TransCamera.ini` — `DefaultFOV`.
+2. **Карты глав (`*_Base_m.xxx`).** Экран выбора в уровне берёт персонажей из `TnCoopInfo.PlayableCharacters` — это ссылки на определения `TnAiCharacterDefinition`. Скрипт делает копии определения с другим `CharacterName` и добавляет их в список. Новые объекты, таблица экспортов и таблица зависимостей дописываются в конец файла, указатели в заголовке перенаправляются, остальное не сдвигается.
+3. **`DLC\AllCharacters\<карта>.ini`.** Раздел `[Engine.PackagesToFullyLoadForDLC]` (`MapName=` + `Package=`): при загрузке главы подгружаются пакеты `TR_<имя>_ROBODEF_p` добавленных персонажей. На каждую карту нужен отдельный файл: несколько `MapName` в одном файле не работают.
 4. **`PCTOC.txt`.** Обновляются размер и md5 изменённых файлов.
-5. **`Binaries\TWFC.exe`.** Ставится флаг Large Address Aware (тот же «4GB Patch»), меняется 1 байт заголовка. Игра 32-битная, и без флага ей доступно только 2 ГБ. Дополнительные модели персонажей и увеличенный пул текстур Configurator'а это пространство исчерпывают, и игра вылетает через минуту-другую после загрузки главы. С флагом в 64-битной Windows доступно 4 ГБ. Оригинал сохраняется как `TWFC.exe.original` и возвращается через `--restore`.
+5. **`Binaries\TWFC.exe`.** Ставится флаг Large Address Aware, меняется 1 байт заголовка. Оригинал сохраняется как `TWFC.exe.original`.
 
 ### Что выяснилось по пути
 
-- **UnrealScript скомпилирован в `TWFC.exe`.** Байткод в пакетах загружается, но не исполняется, поэтому патчить скрипты бесполезно. Работают только изменения данных и конфигов.
-- **Перенос данных объекта работает.** Объект можно перенести в конец пакета и перенаправить запись в таблице экспортов, игра его подхватит.
+- **UnrealScript скомпилирован в `TWFC.exe`.** Байткод в пакетах загружается, но не исполняется, поэтому работают только изменения данных и конфигов.
+- **Лимит 30 FPS не снимается конфигом.** `bSmoothFrameRate` и `MaxSmoothedFrameRate` не влияют, замер в игре всё равно показывает 30 кадров. Ограничение сидит в коде exe; так его снимает [TWFC Advanced Configurator](https://www.nexusmods.com/transformerswarforcybertron/mods/47).
+- **С Configurator'ом и высоким FPS** добавленные ИИ-напарники вылетали чаще. С этим модом его лучше не использовать или держать FPS не выше 60.
 
 Файлы игры в репозиторий **не входят** — только патчер.

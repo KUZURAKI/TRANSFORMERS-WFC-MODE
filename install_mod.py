@@ -48,6 +48,7 @@ ROBODEF_PKG = {
 }
 
 DLC_NAME = 'AllCharacters'
+FOV = 100
 
 KEY = b'vvp;aseiurwefsdcfszdcvnas;dwepo2345098]qw]{}p2039458pseasdfzc'
 K = len(KEY)
@@ -87,7 +88,7 @@ def coalesced_pack(hdr, files):
     return bytes(out)
 
 
-def patch_coalesced(path_in, path_out):
+def patch_coalesced(path_in, path_out, lobby=None):
     d = open(path_in, 'rb').read()
     hdr, files = coalesced_unpack(d)
     assert coalesced_pack(hdr, files) == d, 'Coalesced.ini round-trip failed (unsupported game version?)'
@@ -109,6 +110,9 @@ def patch_coalesced(path_in, path_out):
             if not fac:
                 continue
             full = AUTOBOTS if fac.group(1) == '0' else DECEPTICONS
+            mf = re.search(r'MapFilename=(\S+)', sec)
+            if lobby is not None and mf and mf.group(1).lower() in lobby:
+                full = lobby[mf.group(1).lower()]
             lines = sec.split('\n')
             orig = [l.strip().split('=', 1)[1] for l in lines if l.strip().startswith('CampaignCharacters=')]
             order = orig + [c for c in full if c not in orig]
@@ -130,9 +134,17 @@ def patch_coalesced(path_in, path_out):
     cu = find('TransCustomization.ini')
     t, n = re.subn(r'LockedCharacter=true', 'LockedCharacter=false', cu[1].decode('latin1'))
     cu[1] = t.encode('latin1')
+    tweaks = 0
+    for f in files:
+        fname = f[0].decode('latin1').split('\\')[-1]
+        t = f[1].decode('latin1')
+        if fname.startswith(('PC-TransCamera.ini', 'TransCamera.ini')):
+            t, k = re.subn(r'(?m)^DefaultFOV=\(FOV=[\d.]+', 'DefaultFOV=(FOV=%d' % FOV, t)
+            tweaks += k
+        f[1] = t.encode('latin1')
     out = coalesced_pack(hdr, files)
     open(path_out, 'wb').write(out)
-    print('  Coalesced.ini: %d campaign maps patched, %d characters unlocked' % (patched, n))
+    print('  Coalesced.ini: %d campaign maps patched, %d characters unlocked, fov %d (%d values)' % (patched, n, FOV, tweaks))
     return out
 
 
@@ -343,6 +355,46 @@ def update_toc(toc_path, entries):
     open(toc_path, 'wb').write(b'\r\n'.join(out))
 
 
+def _package_names(path):
+    with open(path, 'rb') as fh:
+        head = fh.read(64)
+        if head[:4] != bytes([0xc1, 0x83, 0x2a, 0x9e]):
+            return set()
+        l, = struct.unpack_from('<i', head, 16)
+        fh.seek(20 + l)
+        flags, nc, no = struct.unpack('<Iii', fh.read(12))
+        fh.seek(no)
+        size = 1 << 20
+        buf = fh.read(size)
+        out, p = set(), 0
+        for _ in range(nc):
+            while p + 4 > len(buf) or p + 4 + abs(struct.unpack_from('<i', buf, p)[0]) * 2 + 8 > len(buf):
+                more = fh.read(size)
+                if not more:
+                    return out
+                buf += more
+            ln, = struct.unpack_from('<i', buf, p)
+            if ln > 0:
+                out.add(buf[p + 4:p + 3 + ln].decode('latin1').lower())
+                p += 4 + ln + 8
+            else:
+                p += 4 - ln * 2 + 8
+        return out
+
+
+def chapter_characters(cooked, mapname, faction):
+    prefix = '_'.join(mapname.split('_')[:2]).lower() + '_'
+    files = [f for f in os.listdir(cooked) if f.lower().startswith(prefix) and f.lower().endswith('.xxx')]
+    present = set()
+    for f in files:
+        names = _package_names(os.path.join(cooked, f + ('.original' if os.path.exists(os.path.join(cooked, f + '.original')) else '')))
+        for c in faction:
+            robo = ROBODEF_PKG[c].replace('_ROBODEF_p', '_ROBO_p').lower()
+            if robo in names:
+                present.add(c)
+    return present
+
+
 def write_dlc(game, extras_by_map):
     base = os.path.join(game, 'DLC', DLC_NAME)
     if os.path.isdir(base):
@@ -413,15 +465,20 @@ def main():
         shutil.copy2(tgame + '.original', tgame)
 
     print('patching...')
-    toc_entries = {b'Config\\PC\\Cooked\\Coalesced.ini': patch_coalesced(coal + '.original', coal)}
+    toc_entries = {}
     if os.path.exists(tgame + '.original'):
         toc_entries[b'CookedPC\\TransGame.xxx'] = open(tgame, 'rb').read()
     extras_by_map = {}
+    lobby = {}
     for m, path in maps.items():
-        data, own, extras = patch_chapter_map(path + '.original', path, CHAPTERS[m])
+        present = chapter_characters(cooked, m, CHAPTERS[m])
+        safe = [c for c in CHAPTERS[m] if c not in present]
+        data, own, extras = patch_chapter_map(path + '.original', path, safe)
         extras_by_map[m] = extras
+        lobby[m.lower()] = own + extras
         toc_entries[('CookedPC\\' + m + '.xxx').encode()] = data
         print('  %s: chapter %s + added %s' % (m, own, extras))
+    toc_entries[b'Config\\PC\\Cooked\\Coalesced.ini'] = patch_coalesced(coal + '.original', coal, lobby)
     write_dlc(game, extras_by_map)
     set_large_address_aware(exe)
     shutil.copy2(toc + '.original', toc)
