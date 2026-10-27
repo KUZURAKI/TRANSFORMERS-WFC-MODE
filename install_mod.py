@@ -87,7 +87,8 @@ def coalesced_pack(hdr, files):
     return bytes(out)
 
 
-def patch_coalesced(path_in, path_out):
+def patch_coalesced(path_in, path_out, skip=None):
+    skip = {k.lower(): v for k, v in (skip or {}).items()}
     d = open(path_in, 'rb').read()
     hdr, files = coalesced_unpack(d)
     assert coalesced_pack(hdr, files) == d, 'Coalesced.ini round-trip failed (unsupported game version?)'
@@ -109,6 +110,8 @@ def patch_coalesced(path_in, path_out):
             if not fac:
                 continue
             full = AUTOBOTS if fac.group(1) == '0' else DECEPTICONS
+            head = re.match(r'\s*\[(\S+)', sec)
+            full = [c for c in full if c not in skip.get(head.group(1).lower() if head else '', [])]
             lines = sec.split('\n')
             orig = [l.strip().split('=', 1)[1] for l in lines if l.strip().startswith('CampaignCharacters=')]
             order = orig + [c for c in full if c not in orig]
@@ -276,7 +279,8 @@ def patch_chapter_map(path_in, path_out, faction):
     refs = list(struct.unpack_from('<%di' % cnt, cblob, pvpos + 4))
     defs = [pk.exports[r - 1] for r in refs]
     own = [_character_name(pk, e) for e in defs]
-    extras = [n for n in faction if n not in own]
+    story = {_character_name(pk, e) for e in pk.exports if pk.cls_name(e) == 'TnAiCharacterDefinition'} - set(own)
+    extras = [n for n in faction if n not in own and n not in story]
     template = defs[0]
 
     new_entries, new_refs = b'', []
@@ -375,6 +379,17 @@ def set_large_address_aware(exe):
     print('  TWFC.exe: large-address-aware (4 GB) enabled')
 
 
+def set_fps_60(exe):
+    d = open(exe, 'rb').read()
+    cap30, cap60 = bytes.fromhex('d905303fa012c208'), bytes.fromhex('d9052c696112c208')
+    if cap60 in d:
+        print('  TWFC.exe: already 60 FPS')
+        return
+    assert d.count(cap30) == 1, 'max tick rate getter not found (unsupported game version?)'
+    open(exe, 'wb').write(d.replace(cap30, cap60))
+    print('  TWFC.exe: frame rate cap 30 -> 60 FPS')
+
+
 def main():
     args = [a for a in sys.argv[1:] if not a.startswith('--')]
     restore = '--restore' in sys.argv
@@ -413,17 +428,20 @@ def main():
         shutil.copy2(tgame + '.original', tgame)
 
     print('patching...')
-    toc_entries = {b'Config\\PC\\Cooked\\Coalesced.ini': patch_coalesced(coal + '.original', coal)}
+    toc_entries = {}
     if os.path.exists(tgame + '.original'):
         toc_entries[b'CookedPC\\TransGame.xxx'] = open(tgame, 'rb').read()
-    extras_by_map = {}
+    extras_by_map, skip = {}, {}
     for m, path in maps.items():
         data, own, extras = patch_chapter_map(path + '.original', path, CHAPTERS[m])
         extras_by_map[m] = extras
+        skip[m] = [n for n in CHAPTERS[m] if n not in own and n not in extras]
         toc_entries[('CookedPC\\' + m + '.xxx').encode()] = data
         print('  %s: chapter %s + added %s' % (m, own, extras))
+    toc_entries[b'Config\\PC\\Cooked\\Coalesced.ini'] = patch_coalesced(coal + '.original', coal, skip)
     write_dlc(game, extras_by_map)
     set_large_address_aware(exe)
+    set_fps_60(exe)
     shutil.copy2(toc + '.original', toc)
     update_toc(toc, toc_entries)
     print('done. Start chapters through "Chapter select" (not "continue").')
