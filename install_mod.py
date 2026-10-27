@@ -1,32 +1,4 @@
 #!/usr/bin/env python3
-"""
-TRANSFORMERS: War for Cybertron - "All Characters" campaign mod (patcher)
-
-Applied to YOUR copy of the game; nothing from the game is redistributed.
-
-  1. Coalesced.ini   - every campaign chapter (A1-A5 / D1-D5) offers every campaign-capable character
-                       of its faction in the lobby; all "LockedCharacter=true" are set to false.
-  2. Chapter maps    - (*_Base_m.xxx) each chapter's TnCoopInfo character list gets a definition for every
-                       other character of the faction (a copy of the chapter's own definition with another
-                       CharacterName), so the in-level character select accepts them.
-  3. DLC\\AllCharacters\\AllCharacters.ini
-                     - [Engine.PackagesToFullyLoadForDLC]: when a chapter map loads, the robot definition
-                       packages (TR_<Name>_ROBODEF_p) of the added characters are loaded too, so the player
-                       can actually spawn as them.
-  4. PCTOC.txt       - size / md5 of the changed files.
-
-Notes learned the hard way (see README):
-  * UnrealScript in this game is compiled into TWFC.exe - changing bytecode in packages has no effect;
-    only data (objects, lists, config) changes work.
-  * The DLC packages are not loaded when you use "continue campaign" from the main menu - start the
-    chapter through "Chapter select".
-
-Originals are backed up next to the files as "*.original" the first time the script runs.
-Usage:
-    python install_mod.py "D:\\Games\\TRANSFORMERS - War for Cybertron"
-    python install_mod.py "<game dir>" --fps60
-    python install_mod.py "<game dir>" --restore
-"""
 import hashlib, os, re, shutil, struct, sys
 
 AUTOBOTS = ['Optimus Prime', 'Optimus', 'Bumblebee', 'Ironhide', 'Ratchet', 'Sideswipe', 'Warpath', 'Jetfire', 'AirRaid']
@@ -49,6 +21,14 @@ ROBODEF_PKG = {
 }
 
 DLC_NAME = 'AllCharacters'
+
+USAGE = '''TRANSFORMERS: War for Cybertron - All Characters
+
+  install_mod [game folder]            install (30 FPS)
+  install_mod [game folder] --fps60    install with 60 FPS (native chapter characters only)
+  install_mod [game folder] --restore  remove the mod, restore original files
+
+Without a game folder the folder of install_mod itself is used.'''
 
 KEY = b'vvp;aseiurwefsdcfszdcvnas;dwepo2345098]qw]{}p2039458pseasdfzc'
 K = len(KEY)
@@ -392,12 +372,13 @@ def set_fps(exe, fps60):
 
 
 def main():
-    args = [a for a in sys.argv[1:] if not a.startswith('--')]
+    args = [a for a in sys.argv[1:] if not a.startswith('-')]
     restore = '--restore' in sys.argv
-    if not args:
-        print(__doc__)
-        sys.exit(1)
-    game = args[0]
+    if '--help' in sys.argv or '-h' in sys.argv:
+        print(USAGE)
+        return
+    here = os.path.dirname(os.path.abspath(sys.executable if getattr(sys, 'frozen', False) else sys.argv[0]))
+    game = args[0] if args else here
     tg = os.path.join(game, 'TransGame')
     cooked = os.path.join(tg, 'CookedPC')
     coal = os.path.join(tg, 'Config', 'PC', 'Cooked', 'Coalesced.ini')
@@ -407,7 +388,12 @@ def main():
     exe = os.path.join(game, 'Binaries', 'TWFC.exe')
     for p in [coal, toc, exe] + list(maps.values()):
         if not os.path.exists(p):
-            sys.exit('not found: ' + p + '\n(pass the game folder that contains Binaries and TransGame)')
+            sys.exit('not found: ' + p + '\n\n' + USAGE + '\n\nPut the mod into the game folder (next to Binaries and TransGame) or pass that folder.')
+
+    try:
+        open(exe, 'r+b').close()
+    except PermissionError:
+        sys.exit('TWFC.exe is in use. Close the game and run again.')
 
     all_files = [coal, toc, tgame, exe] + list(maps.values())
     if restore:
@@ -446,7 +432,7 @@ def main():
     shutil.copy2(toc + '.original', toc)
     update_toc(toc, toc_entries)
     print('done. Start chapters through "Chapter select" (not "continue").')
-    print('To undo: python install_mod.py "<game dir>" --restore')
+    print('To undo: install_mod --restore')
 
 
 if __name__ == '__main__':
