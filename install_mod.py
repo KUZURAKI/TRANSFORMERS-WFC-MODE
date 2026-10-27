@@ -24,6 +24,7 @@ Notes learned the hard way (see README):
 Originals are backed up next to the files as "*.original" the first time the script runs.
 Usage:
     python install_mod.py "D:\\Games\\TRANSFORMERS - War for Cybertron"
+    python install_mod.py "<game dir>" --fps60
     python install_mod.py "<game dir>" --restore
 """
 import hashlib, os, re, shutil, struct, sys
@@ -379,15 +380,15 @@ def set_large_address_aware(exe):
     print('  TWFC.exe: large-address-aware (4 GB) enabled')
 
 
-def set_fps_60(exe):
+def set_fps(exe, fps60):
     d = open(exe, 'rb').read()
     cap30, cap60 = bytes.fromhex('d905303fa012c208'), bytes.fromhex('d9052c696112c208')
-    if cap60 in d:
-        print('  TWFC.exe: already 60 FPS')
-        return
-    assert d.count(cap30) == 1, 'max tick rate getter not found (unsupported game version?)'
-    open(exe, 'wb').write(d.replace(cap30, cap60))
-    print('  TWFC.exe: frame rate cap 30 -> 60 FPS')
+    old, new = (cap30, cap60) if fps60 else (cap60, cap30)
+    if old in d:
+        d = d.replace(old, new)
+        open(exe, 'wb').write(d)
+    assert d.count(new) == 1, 'max tick rate getter not found (unsupported game version?)'
+    print('  TWFC.exe: frame rate cap %d FPS' % (60 if fps60 else 30))
 
 
 def main():
@@ -441,7 +442,7 @@ def main():
     toc_entries[b'Config\\PC\\Cooked\\Coalesced.ini'] = patch_coalesced(coal + '.original', coal, skip)
     write_dlc(game, extras_by_map)
     set_large_address_aware(exe)
-    set_fps_60(exe)
+    set_fps(exe, '--fps60' in sys.argv)
     shutil.copy2(toc + '.original', toc)
     update_toc(toc, toc_entries)
     print('done. Start chapters through "Chapter select" (not "continue").')
