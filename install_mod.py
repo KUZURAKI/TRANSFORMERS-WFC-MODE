@@ -24,9 +24,10 @@ DLC_NAME = 'AllCharacters'
 
 USAGE = '''TRANSFORMERS: War for Cybertron - All Characters
 
-  install_mod [game folder]            install (30 FPS)
-  install_mod [game folder] --fps60    install with 60 FPS (native chapter characters only)
-  install_mod [game folder] --restore  remove the mod, restore original files
+  install_mod [game folder]                  install the mod (30 FPS)
+  install_mod [game folder] --fps60          original game, 60 FPS (mod removed)
+  install_mod [game folder] --fps-unlimited  original game, no FPS limit (mod removed)
+  install_mod [game folder] --restore        remove the mod, restore original files
 
 Without a game folder the folder of install_mod itself is used.'''
 
@@ -360,15 +361,17 @@ def set_large_address_aware(exe):
     print('  TWFC.exe: large-address-aware (4 GB) enabled')
 
 
-def set_fps(exe, fps60):
+FPS_CAPS = {30: 'd905303fa012c208', 60: 'd9052c696112c208', 0: 'd9ee90909090c208'}
+
+
+def set_fps(exe, fps):
     d = open(exe, 'rb').read()
-    cap30, cap60 = bytes.fromhex('d905303fa012c208'), bytes.fromhex('d9052c696112c208')
-    old, new = (cap30, cap60) if fps60 else (cap60, cap30)
-    if old in d:
+    new = bytes.fromhex(FPS_CAPS[fps])
+    for old in map(bytes.fromhex, FPS_CAPS.values()):
         d = d.replace(old, new)
-        open(exe, 'wb').write(d)
     assert d.count(new) == 1, 'max tick rate getter not found (unsupported game version?)'
-    print('  TWFC.exe: frame rate cap %d FPS' % (60 if fps60 else 30))
+    open(exe, 'wb').write(d)
+    print('  TWFC.exe: frame rate cap %s' % ('%d FPS' % fps if fps else 'off'))
 
 
 def main():
@@ -395,8 +398,9 @@ def main():
     except PermissionError:
         sys.exit('TWFC.exe is in use. Close the game and run again.')
 
+    fps = 60 if '--fps60' in sys.argv else 0 if '--fps-unlimited' in sys.argv else None
     all_files = [coal, toc, tgame, exe] + list(maps.values())
-    if restore:
+    if restore or fps is not None:
         for p in all_files:
             if os.path.exists(p + '.original'):
                 shutil.copy2(p + '.original', p)
@@ -405,6 +409,10 @@ def main():
         if os.path.isdir(dlc):
             shutil.rmtree(dlc)
             print('removed', dlc)
+        if fps is not None:
+            if not os.path.exists(exe + '.original'):
+                shutil.copy2(exe, exe + '.original')
+            set_fps(exe, fps)
         return
 
     for p in [coal, toc, exe] + list(maps.values()):
@@ -428,7 +436,7 @@ def main():
     toc_entries[b'Config\\PC\\Cooked\\Coalesced.ini'] = patch_coalesced(coal + '.original', coal, skip)
     write_dlc(game, extras_by_map)
     set_large_address_aware(exe)
-    set_fps(exe, '--fps60' in sys.argv)
+    set_fps(exe, 30)
     shutil.copy2(toc + '.original', toc)
     update_toc(toc, toc_entries)
     print('done. Start chapters through "Chapter select" (not "continue").')
